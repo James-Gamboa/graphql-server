@@ -1,33 +1,15 @@
 import { ApolloServer, UserInputError, gql } from "apollo-server";
 import { v1 as uuid } from "uuid";
+import axios from "axios";
 
-const persons = [
-  {
-    name: "Rocky",
-    age: "11",
-    phone: "034-1234567",
-    street: "Calle Frontend",
-    city: "Guarari",
-    id: "3d594650-3436-11e9-bc57-8b80ba54c431",
-  },
-  {
-    name: "James",
-    age: "23",
-    phone: "044-123456",
-    street: "Avenida Fullstack",
-    city: "Heredia",
-    id: "3d599470-3436-11e9-bc57-8b80ba54c431",
-  },
-  {
-    name: "Cookie",
-    age: "19",
-    street: "Pasaje Testing",
-    city: "Los lagos",
-    id: "3d599471-3436-11e9-bc57-8b80ba54c431",
-  },
-];
+let personsFromRestApi = [];
 
 const typeDefs = gql`
+  enum YesNo {
+    YES
+    NO
+  }
+
   type Address {
     street: String!
     city: String!
@@ -43,7 +25,7 @@ const typeDefs = gql`
 
   type Query {
     personCount: Int!
-    allPersons: [Person]!
+    allPersons(phone: YesNo): [Person]!
     findPerson(name: String!): Person
   }
 
@@ -54,29 +36,46 @@ const typeDefs = gql`
       street: String!
       city: String!
     ): Person
+    editNumber(name: String!, phone: String!): Person
   }
 `;
 
 const resolvers = {
   Query: {
-    personCount: () => persons.length,
-    allPersons: () => persons,
+    personCount: () => personsFromRestApi.length,
+    allPersons: async (root, args) => {
+      const { data } = await axios.get("http://localhost:3000/persons");
+      personsFromRestApi = data;
+      if (!args.phone) return personsFromRestApi;
+      const byPhone = (person) =>
+        args.phone === "YES" ? person.phone : !person.phone;
+      return personsFromRestApi.filter(byPhone);
+    },
     findPerson: (root, args) => {
       const { name } = args;
-      return persons.find((person) => person.name === name);
+      return personsFromRestApi.find((person) => person.name === name);
     },
   },
   Mutation: {
     addPerson: (root, args) => {
-      if (persons.find((p) => p.name === args.name)) {
+      if (personsFromRestApi.find((p) => p.name === args.name)) {
         throw new UserInputError("Name must be unique", {
           invalidArgs: args.name,
         });
       }
-      // const { name, phone , street , city } = args
       const person = { ...args, id: uuid() };
-      persons.push(person); //update database with new person
+      personsFromRestApi.push(person);
       return person;
+    },
+    editNumber: (root, args) => {
+      const personIndex = personsFromRestApi.findIndex(
+        (p) => p.name === args.name
+      );
+      if (personIndex === -1) return null;
+      const person = personsFromRestApi[personIndex];
+      const updatedPerson = { ...person, phone: args.phone };
+      personsFromRestApi[personIndex] = updatedPerson;
+      return updatedPerson;
     },
   },
   Person: {
@@ -96,5 +95,5 @@ const server = new ApolloServer({
 });
 
 server.listen().then(({ url }) => {
-  console.log(`listening on ${url}`);
+  console.log(`Server ready at ${url}`);
 });
